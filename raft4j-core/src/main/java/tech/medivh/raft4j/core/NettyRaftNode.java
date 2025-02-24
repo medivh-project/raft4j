@@ -1,17 +1,6 @@
 package tech.medivh.raft4j.core;
 
-import io.netty.bootstrap.ServerBootstrap;
-import io.netty.channel.ChannelFuture;
-import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.ChannelInitializer;
-import io.netty.channel.ChannelOption;
-import io.netty.channel.ChannelPipeline;
-import io.netty.channel.EventLoopGroup;
-import io.netty.channel.SimpleChannelInboundHandler;
-import io.netty.channel.socket.SocketChannel;
-import io.netty.channel.socket.nio.NioServerSocketChannel;
-import io.netty.handler.codec.string.StringDecoder;
-import io.netty.handler.codec.string.StringEncoder;
+import tech.medivh.raft4j.core.netty.WatchDog;
 import tech.medivh.raft4j.core.netty.net.RaftServer;
 
 import java.util.List;
@@ -21,22 +10,22 @@ import java.util.List;
  **/
 public class NettyRaftNode implements RaftNode {
 
-    private RaftServer server = new RaftServer();
-
-    private int port = 8888;
-    private NodeState nodeState = NodeState.FOLLOWER;
-
+    private final RaftServer server = new RaftServer();
+    
+    private final NodeStateMachine stateMachine = new NodeStateMachine();
+    
+    private final WatchDog watchDog = new WatchDog(stateMachine);
+    
     @Override
     public void start() {
         server.start();
+        watchDog.startWatch();
     }
 
-    private void start0() {
-        
-    }
 
     @Override
     public void stop() {
+        server.stop();
     }
 
     @Override
