@@ -1,19 +1,25 @@
 plugins {
-    id("java")
+    kotlin("jvm")
 }
 
-group = "tech.medivh"
-version = "0.0.1"
 
-repositories {
-    mavenCentral()
+allprojects {
+    apply(plugin = "org.jetbrains.kotlin.jvm")
+
+    group = "tech.medivh.raft4j"
+    version = "0.0.1"
+
+    repositories {
+        mavenCentral()
+        mavenLocal()
+    }
+
+    kotlin {
+        jvmToolchain(11)
+    }
+
+    tasks.withType<Test>().configureEach { useJUnitPlatform() }
 }
 
-dependencies {
-    testImplementation(platform("org.junit:junit-bom:5.10.0"))
-    testImplementation("org.junit.jupiter:junit-jupiter")
-}
 
-tasks.test {
-    useJUnitPlatform()
-}
+

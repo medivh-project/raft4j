@@ -10,7 +10,7 @@ import java.util.List;
 public interface RaftNode {
 
     /**
-     * start the raft server,and start client 
+     * start the raft server,and start client
      **/
     void start();
 
@@ -29,6 +29,6 @@ public interface RaftNode {
      * return the cluster nodes snapshot
      **/
     List<NodeInfo> getClusterNodes();
-    
-    
+
+
 }

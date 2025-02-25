@@ -25,10 +25,10 @@ public class WatchDog {
         schedule.scheduleAtFixedRate(this::watch, 1500, 1000, java.util.concurrent.TimeUnit.MILLISECONDS);
         log.info("watch dog listen leader heartbeat");
     }
-    
-    
-    private void watch(){
-        if(owner.getHeartbeat() < System.currentTimeMillis() - 1500){
+
+
+    private void watch() {
+        if (owner.getHeartbeat() < System.currentTimeMillis() - 1500) {
             log.warn("leader heartbeat timeout");
         }
     }

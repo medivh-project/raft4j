@@ -13,24 +13,23 @@ import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.codec.string.StringDecoder;
 import io.netty.handler.codec.string.StringEncoder;
 import lombok.extern.slf4j.Slf4j;
+import tech.medivh.raft4j.core.NodeInfo;
 
 /**
- * @author gongxuanzhangmelt@gmail.com 
+ * @author gongxuanzhangmelt@gmail.com
  **/
 @Slf4j
 public class RaftClient {
 
     private static final EventLoopGroup CLIENT_GROUP = new NioEventLoopGroup();
 
-    private final String host;
-    private final int port;
+    private final NodeInfo serverNode;
 
-    public RaftClient(String host, int port) {
-        this.host = host;
-        this.port = port;
+    public RaftClient(NodeInfo serverNode) {
+        this.serverNode = serverNode;
     }
 
-    public void start() {
+    public void connect() {
         try {
             Bootstrap bootstrap = new Bootstrap();
             bootstrap.group(CLIENT_GROUP)
@@ -50,16 +49,15 @@ public class RaftClient {
                         }
                     });
 
-            ChannelFuture channelFuture = bootstrap.connect(host, port).sync();
-            log.info("client connected server: {}:{}", host, port);
+            ChannelFuture channelFuture = bootstrap.connect(serverNode.getHost(), serverNode.getPort()).sync();
+            log.info("client connected server: {}:{}", serverNode.getHost(), serverNode.getPort());
 
             Channel channel = channelFuture.channel();
-            channel.writeAndFlush("Hello, Server!").sync(); 
+            channel.writeAndFlush("Hello, Server!").sync();
 
             channel.closeFuture().sync();
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
     }
-
 }

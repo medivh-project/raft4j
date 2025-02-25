@@ -11,11 +11,11 @@ import java.util.List;
 public class NettyRaftNode implements RaftNode {
 
     private final RaftServer server = new RaftServer();
-    
+
     private final NodeStateMachine stateMachine = new NodeStateMachine();
-    
+
     private final WatchDog watchDog = new WatchDog(stateMachine);
-    
+
     @Override
     public void start() {
         server.start();
