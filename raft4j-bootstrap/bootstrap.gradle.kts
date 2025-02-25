@@ -26,7 +26,7 @@ tasks.register("startNode", JavaExec::class.java) {
 
 dependencies {
     implementation(gradleApi())
-    api(project(":raft4j-core"))
+    implementation(project(":raft4j-core"))
     testImplementation(platform("org.junit:junit-bom:5.10.0"))
     testImplementation("org.junit.jupiter:junit-jupiter")
 }

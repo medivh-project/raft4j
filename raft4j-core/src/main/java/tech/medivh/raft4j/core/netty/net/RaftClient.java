@@ -3,17 +3,15 @@ package tech.medivh.raft4j.core.netty.net;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
-import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.ChannelInitializer;
 import io.netty.channel.EventLoopGroup;
-import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.channel.nio.NioEventLoopGroup;
-import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
-import io.netty.handler.codec.string.StringDecoder;
-import io.netty.handler.codec.string.StringEncoder;
 import lombok.extern.slf4j.Slf4j;
 import tech.medivh.raft4j.core.NodeInfo;
+import tech.medivh.raft4j.core.netty.NodeClientChannelInitializer;
+
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * @author gongxuanzhangmelt@gmail.com
@@ -25,6 +23,8 @@ public class RaftClient {
 
     private final NodeInfo serverNode;
 
+    private Channel channel;
+    
     public RaftClient(NodeInfo serverNode) {
         this.serverNode = serverNode;
     }
@@ -34,30 +34,36 @@ public class RaftClient {
             Bootstrap bootstrap = new Bootstrap();
             bootstrap.group(CLIENT_GROUP)
                     .channel(NioSocketChannel.class)
-                    .handler(new ChannelInitializer<SocketChannel>() {
-                        @Override
-                        public void initChannel(SocketChannel ch) throws Exception {
-                            ch.pipeline()
-                                    .addLast(new StringEncoder())
-                                    .addLast(new StringDecoder())
-                                    .addLast(new SimpleChannelInboundHandler<String>() {
-                                        @Override
-                                        protected void channelRead0(ChannelHandlerContext ctx, String msg) throws Exception {
-                                            System.out.println("服务器响应: " + msg);
-                                        }
-                                    });
-                        }
-                    });
-
+                    .handler(new NodeClientChannelInitializer());
             ChannelFuture channelFuture = bootstrap.connect(serverNode.getHost(), serverNode.getPort()).sync();
             log.info("client connected server: {}:{}", serverNode.getHost(), serverNode.getPort());
-
-            Channel channel = channelFuture.channel();
-            channel.writeAndFlush("Hello, Server!").sync();
-
-            channel.closeFuture().sync();
+            channel = channelFuture.channel();
+            channelFuture.channel().closeFuture().addListener((f) -> {
+                channel = null;
+            });
         } catch (InterruptedException e) {
-            e.printStackTrace();
+            Thread.currentThread().interrupt();
+            log.error("Connection interrupted, closing client...");
         }
+    }
+
+
+    public boolean isAlive() {
+        return channel != null && channel.isActive();
+    }
+    
+    public void sendMessage(String message) {
+        if (!isAlive()) {
+            log.warn("client is not alive, message: {} will not be sent", message);
+            return;
+        }
+        channel.writeAndFlush(message);
+    }
+
+    public static void main(String[] args) {
+        RaftClient localhost = new RaftClient(new NodeInfo("localhost", 8888));
+        localhost.connect();
+        System.out.println("client connected");
+        localhost.sendMessage("hello");
     }
 }

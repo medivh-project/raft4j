@@ -28,7 +28,6 @@ public class RaftServer {
     private EventLoopGroup bossGroup;
     private EventLoopGroup workerGroup;
     private ChannelFuture channelFuture;
-    private Thread serverThread;
 
     public void start() {
         if (!started.compareAndSet(false, true)) {
@@ -37,8 +36,7 @@ public class RaftServer {
         }
         bossGroup = new NioEventLoopGroup(1);
         workerGroup = new NioEventLoopGroup();
-        serverThread = new Thread(this::start0, "raft-node-server");
-        serverThread.start();
+        start0();
     }
 
 
@@ -56,7 +54,6 @@ public class RaftServer {
         if (workerGroup != null) {
             workerGroup.shutdownGracefully();
         }
-        this.serverThread = null;
     }
 
     private void start0() {
@@ -84,7 +81,7 @@ public class RaftServer {
                     .addListener(v -> log.info("raft server start in [{}] port", port))
                     .sync();
             channelFuture.channel().closeFuture()
-                    .addListener(v -> log.info("raft server has been stop..")).sync();
+                    .addListener(v -> log.info("raft server has been stop.."));
         } catch (InterruptedException e) {
             log.error("server error", e);
             Thread.currentThread().interrupt();
