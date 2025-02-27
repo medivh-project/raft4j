@@ -16,17 +16,31 @@ import lombok.extern.slf4j.Slf4j;
 import tech.medivh.raft4j.core.NodeInfo;
 import tech.medivh.raft4j.core.netty.message.RaftMessage;
 import tech.medivh.raft4j.core.netty.message.RaftMessageCodec;
+import tech.medivh.raft4j.core.netty.message.ResponseCode;
+import tech.medivh.raft4j.core.netty.processor.NettyMessageProcessor;
 
 import java.net.SocketAddress;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 
 /**
  * @author gongxuanzhangmelt@gmail.com
  **/
 @Slf4j
-public class RaftClient {
+public class RaftClient implements NettyMessageProcessor {
 
     private static final EventLoopGroup CLIENT_GROUP = new NioEventLoopGroup();
+
+    private final Map<Integer/*message code*/, NettyMessageProcessor> processorTable = new HashMap<>(64);
+
+    private final Map<Integer, ResponseFuture> inFlightRequests = new ConcurrentHashMap<>(256);
+
+    private ExecutorService processorExecutor =
+            Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
 
     private final NodeInfo serverNode;
 
@@ -85,6 +99,21 @@ public class RaftClient {
         return new RemoteResponseFuture();
     }
 
+    @Override
+    public void processRequest(ChannelHandlerContext ctx, RaftMessage request) {
+
+    }
+
+    @Override
+    public void processResponse(ChannelHandlerContext ctx, RaftMessage response) {
+        ResponseFuture responseFuture = inFlightRequests.remove(response.getCode());
+        if (responseFuture == null) {
+            log.warn("response future not found for response: {},address:{}, channel: {}", response,
+                    ctx.channel().remoteAddress(), ctx.channel());
+            return;
+        }
+    }
+
 
     static class NettyConnectManageHandler extends ChannelDuplexHandler {
         @Override
@@ -120,7 +149,6 @@ public class RaftClient {
             super.channelInactive(ctx);
         }
 
-
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
             System.out.println("error:" + cause.getMessage());
@@ -131,7 +159,11 @@ public class RaftClient {
 
         @Override
         protected void channelRead0(ChannelHandlerContext ctx, RaftMessage msg) throws Exception {
-            processMessage(ctx, msg);
+            if (msg.getCode() >= ResponseCode.RESPONSE_FLAG) {
+                processResponse(ctx, msg);
+                return;
+            }
+            processRequest(ctx, msg);
         }
     }
 

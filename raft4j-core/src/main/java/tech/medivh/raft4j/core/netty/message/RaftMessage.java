@@ -12,9 +12,10 @@ import java.util.concurrent.atomic.AtomicInteger;
  * message protocol：
  * <ol>
  *    <li>length (4 bytes)</li>
- *    <li>version (1 byte)</li>
- *    <li>type (2 bytes)</li>
- *    <li>body (length - 4 - 1 - 2 -4)</li>
+ *    <li>version (2 byte)</li>
+ *    <li>type (4 bytes)</li>
+ *    <li> request id </>
+ *    <li>body (length - 4 - 4 - 2 -4 -4)</li>
  *    <li>checksum (4 bytes)</li>
  *  </ol>
  * checksum rule:
@@ -25,27 +26,30 @@ import java.util.concurrent.atomic.AtomicInteger;
  * @author gongxuanzhangmelt@gmail.com
  **/
 public class RaftMessage {
-    
+
     private static final AtomicInteger REQUEST_SEQ = new AtomicInteger(0);
 
-    private final int typeCode;
+    private final int code;
 
     private final int version;
+
+    private int requestId = REQUEST_SEQ.getAndIncrement();
 
     private byte[] body;
 
 
-    public RaftMessage(int typeCode, int version) {
-        this.typeCode = typeCode;
+    public RaftMessage(int code, int version) {
+        this.code = code;
         this.version = version;
     }
 
 
     public static RaftMessage decode(ByteBuf byteBuffer) throws DecoderException {
         int length = byteBuffer.readableBytes();
-        byte version = byteBuffer.readByte();
-        short type = byteBuffer.readShort();
-        int bodyLength = length - 4 - 1 - 2 - 4;
+        int version = byteBuffer.readUnsignedShort();
+        int type = byteBuffer.readInt();
+        int requestId = byteBuffer.readInt();
+        int bodyLength = length - 4 - 4 - 2 - 4 - 4;
         if (bodyLength < 0) {
             throw new DecoderException("body length is negative");
         }
@@ -57,6 +61,7 @@ public class RaftMessage {
         }
         RaftMessage message = new RaftMessage(type, version);
         message.body = body;
+        message.requestId = requestId;
         return message;
     }
 
@@ -68,14 +73,23 @@ public class RaftMessage {
         int checksum = ~(length + first * last);
         ByteBuffer byteBuffer = ByteBuffer.allocate(length);
         byteBuffer.putInt(length)
-                .put((byte) version)
-                .putShort((short) typeCode);
+                .putShort((short) version)
+                .putInt(code)
+                .putInt(requestId);
         if (body != null) {
             byteBuffer.put(body);
         }
         byteBuffer.putInt(checksum);
         byteBuffer.flip();
         return byteBuffer;
+    }
+
+    public int getRequestId() {
+        return requestId;
+    }
+
+    public void setRequestId(int requestId) {
+        this.requestId = requestId;
     }
 
     public void setBody(byte[] body) {
@@ -86,8 +100,12 @@ public class RaftMessage {
         return body;
     }
 
-    public RaftMessageType getMessageType() {
-        return RaftMessageType.values()[typeCode];
+    public int getCode() {
+        return code;
+    }
+
+    public int getVersion() {
+        return version;
     }
 
 
