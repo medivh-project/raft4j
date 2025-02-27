@@ -5,7 +5,7 @@ import tech.medivh.raft4j.core.NettyRaftNode;
 /**
  * @author gongxuanzhangmelt@gmail.com
  **/
-public class StartNode {
+public class NodeBootStrap {
 
     public static void main(String[] args) {
         NettyRaftNode nettyRaftNode = new NettyRaftNode();
