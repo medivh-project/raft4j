@@ -8,5 +8,4 @@ public enum NodeState {
     CANDIDATE,
     LEADER,
     FOLLOWER
-
 }

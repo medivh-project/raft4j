@@ -1,9 +1,10 @@
-package tech.medivh.raft4j.core.netty.message;
+package tech.medivh.raft4j.core;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.handler.codec.DecoderException;
 
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicInteger;
 
 
@@ -38,9 +39,25 @@ public class RaftMessage {
     private byte[] body;
 
 
+    public RaftMessage(int code) {
+        this(code, Raft4J.CURRENT_VERSION);
+    }
+
     public RaftMessage(int code, int version) {
         this.code = code;
         this.version = version;
+    }
+
+    public static RaftMessage createResponse(int code, byte[] body) {
+        RaftMessage message = new RaftMessage(code);
+        message.body = body;
+        return message;
+    }
+
+    public static RaftMessage createResponse(int code, String body) {
+        RaftMessage message = new RaftMessage(code);
+        message.body = body.getBytes(StandardCharsets.UTF_8);
+        return message;
     }
 
 

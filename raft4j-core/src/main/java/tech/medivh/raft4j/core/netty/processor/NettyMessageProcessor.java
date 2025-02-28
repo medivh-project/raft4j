@@ -3,7 +3,7 @@ package tech.medivh.raft4j.core.netty.processor;
 
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
-import tech.medivh.raft4j.core.netty.message.RaftMessage;
+import tech.medivh.raft4j.core.RaftMessage;
 
 /**
  * process netty raft message {@link RaftMessage}

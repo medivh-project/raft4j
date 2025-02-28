@@ -12,17 +12,17 @@ public class RaftClientManager {
 
     private final Cluster cluster;
 
-    private RaftClient[] clientSessions;
+    private NettyRaftClient[] clientSessions;
 
     public RaftClientManager(Cluster cluster) {
         this.cluster = cluster;
     }
 
     public void connect() {
-        clientSessions = new RaftClient[cluster.nodeCount()];
+        clientSessions = new NettyRaftClient[cluster.nodeCount()];
         for (int i = 0; i < cluster.nodeCount(); i++) {
-            clientSessions[i] = new RaftClient(cluster.select(i));
-            clientSessions[i].connect();
+//            clientSessions[i] = new NettyRaftClient(cluster.select(i));
+//            clientSessions[i].start();
         }
     }
 
