@@ -1,7 +1,7 @@
 package tech.medivh.raft4j.core.netty.net;
 
+import tech.medivh.raft4j.core.NodeInfo;
 import tech.medivh.raft4j.core.RaftMessage;
-import tech.medivh.raft4j.core.RaftNode;
 import tech.medivh.raft4j.core.netty.exception.MessageTimeoutException;
 import tech.medivh.raft4j.core.netty.processor.NettyMessageProcessor;
 
@@ -16,13 +16,14 @@ public interface RaftClient {
     void start();
 
     /**
-     * close the connection
+     * shutdown the client
      **/
-    void stop();
+    void shutdown();
 
     /**
      * register the message processor to the client
-     * @param code the processor support message code
+     *
+     * @param code      the processor support message code
      * @param processor the processor instance
      **/
     void registerMessageProcessor(int code, NettyMessageProcessor processor);
@@ -35,7 +36,7 @@ public interface RaftClient {
      * @param request       the request message
      * @param timeoutMillis the timeout
      **/
-    ResponseFuture sendRequestSync(RaftNode node, RaftMessage request, long timeoutMillis) throws MessageTimeoutException, InterruptedException;
+    ResponseFuture sendRequestSync(NodeInfo node, RaftMessage request, long timeoutMillis) throws MessageTimeoutException, InterruptedException;
 
     /**
      * send request immediate return.
@@ -46,5 +47,5 @@ public interface RaftClient {
      * @param request  the request message
      * @param callback the callback instance
      **/
-    ResponseFuture sendRequestAsync(RaftNode node, RaftMessage request, ResponseCallback callback);
+    ResponseFuture sendRequestAsync(NodeInfo node, RaftMessage request, ResponseCallback callback);
 }

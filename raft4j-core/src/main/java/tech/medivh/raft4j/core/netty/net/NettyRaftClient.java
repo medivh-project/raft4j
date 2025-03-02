@@ -9,7 +9,6 @@ import io.netty.util.concurrent.DefaultThreadFactory;
 import lombok.extern.slf4j.Slf4j;
 import tech.medivh.raft4j.core.NodeInfo;
 import tech.medivh.raft4j.core.RaftMessage;
-import tech.medivh.raft4j.core.RaftNode;
 import tech.medivh.raft4j.core.netty.RaftClientConfig;
 import tech.medivh.raft4j.core.netty.exception.MessageTimeoutException;
 import tech.medivh.raft4j.core.netty.message.RaftMessageCodec;
@@ -20,9 +19,11 @@ import java.net.SocketAddress;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 
@@ -40,7 +41,11 @@ public class NettyRaftClient implements NettyMessageProcessor, RaftClient {
 
     private final Map<Integer, ResponseFuture> inFlightRequests = new ConcurrentHashMap<>(256);
 
-    private final ConcurrentMap<NodeInfo, ChannelWrapper> channelTables = new ConcurrentHashMap<>();
+    private final Map<NodeInfo, ChannelWrapper> channelTable = new ConcurrentHashMap<>();
+
+    private static final long LOCK_TIMEOUT_MILLIS = 3000;
+
+    private final Lock channelLock = new ReentrantLock();
 
     private final RaftClientConfig config;
 
@@ -72,7 +77,8 @@ public class NettyRaftClient implements NettyMessageProcessor, RaftClient {
     }
 
     @Override
-    public void stop() {
+    public void shutdown() {
+
     }
 
     private void retryConnect() {
@@ -89,16 +95,89 @@ public class NettyRaftClient implements NettyMessageProcessor, RaftClient {
     }
 
     @Override
-    public ResponseFuture sendRequestSync(RaftNode node, RaftMessage request, long timeoutMillis) throws MessageTimeoutException, InterruptedException {
-        Channel channel = null;
-        RemoteResponseFuture responseFuture = new RemoteResponseFuture(request);
-        inFlightRequests.put(request.getCode(), responseFuture);
-        responseFuture.waitResponse(timeoutMillis);
-        return responseFuture;
+    public ResponseFuture sendRequestSync(NodeInfo node, RaftMessage request, long timeoutMillis) throws MessageTimeoutException, InterruptedException {
+        return null;
+    }
+
+
+    /**
+     * sync channel return channelFuture
+     **/
+    private ChannelFuture createOrGetChannelAsync(NodeInfo node) {
+        ChannelWrapper channelWrapper = tryGetWrapper(node);
+        if (channelWrapper != null) {
+            return channelWrapper.getChannelFuture();
+        }
+        try {
+            if (channelLock.tryLock(LOCK_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)) {
+                channelWrapper = tryGetWrapper(node);
+                if (channelWrapper == null) {
+                    return createChannel(node).getChannelFuture();
+                }
+                //  channel future not done means connecting,it is not an illegal state
+                if (channelWrapper.isActive() || !channelWrapper.getChannelFuture().isDone()) {
+                    return channelWrapper.getChannelFuture();
+                }
+                //  illegal state 
+                channelTable.remove(node);
+                return createChannel(node).getChannelFuture();
+            }
+            log.warn("createChannel: try to lock channel table, but timeout, {}ms", LOCK_TIMEOUT_MILLIS);
+        } catch (Exception e) {
+            log.error("createChannel: create channel exception", e);
+        } finally {
+            channelLock.unlock();
+        }
+        return null;
+    }
+
+    private ChannelWrapper tryGetWrapper(NodeInfo node) {
+        ChannelWrapper channelWrapper = channelTable.get(node);
+        if (channelWrapper != null && channelWrapper.isActive()) {
+            return channelWrapper;
+        }
+        return null;
+    }
+
+
+    private ChannelWrapper createChannel(NodeInfo node) {
+        ChannelFuture connectFuture = this.bootstrap.connect(node.getHost(), node.getPort());
+        log.info("createChannel: begin to connect remote host[{}] asynchronously", connectFuture);
+        ChannelWrapper cw = new ChannelWrapper(node, connectFuture);
+        this.channelTable.put(node, cw);
+        return cw;
+    }
+
+    private Channel createOrGetChannelSync(NodeInfo node) {
+        ChannelFuture channelFuture = createOrGetChannelAsync(node);
+        if (channelFuture != null) {
+            return channelFuture.awaitUninterruptibly().channel();
+        }
+        return null;
     }
 
     @Override
-    public ResponseFuture sendRequestAsync(RaftNode node, RaftMessage request, ResponseCallback callback) {
+    public ResponseFuture sendRequestAsync(NodeInfo node, RaftMessage request, ResponseCallback callback) {
+        ChannelFuture channelFuture = createOrGetChannelAsync(node);
+        channelFuture.addListener(f -> {
+            if (f.isSuccess()) {
+                Channel channel = channelFuture.channel();
+                writeAndFlushRequest(channel, request);
+                return;
+            }
+
+        });
+        Channel channel = null;
+        RemoteResponseFuture responseFuture = new RemoteResponseFuture(request);
+        inFlightRequests.put(request.getCode(), responseFuture);
+//        responseFuture.waitResponse(timeoutMillis);
+        return responseFuture;
+    }
+
+    private ChannelFuture writeAndFlushRequest(Channel channel, RaftMessage request) {
+//        if (channel != null && channel.isActive()) {
+//
+//        }
         return null;
     }
 
@@ -212,16 +291,13 @@ public class NettyRaftClient implements NettyMessageProcessor, RaftClient {
     class ChannelWrapper {
         private final ReentrantReadWriteLock lock;
         private ChannelFuture channelFuture;
-        // only affected by sync or async request, oneway is not included.
         private ChannelFuture channelToClose;
-        private long lastResponseTime;
-        private final String channelAddress;
+        private final NodeInfo nodeInfo;
 
-        public ChannelWrapper(String address, ChannelFuture channelFuture) {
+        public ChannelWrapper(NodeInfo node, ChannelFuture channelFuture) {
             this.lock = new ReentrantReadWriteLock();
             this.channelFuture = channelFuture;
-            this.lastResponseTime = System.currentTimeMillis();
-            this.channelAddress = address;
+            this.nodeInfo = node;
         }
 
         public boolean isActive() {
@@ -247,18 +323,6 @@ public class NettyRaftClient implements NettyMessageProcessor, RaftClient {
             } finally {
                 lock.readLock().unlock();
             }
-        }
-
-        public long getLastResponseTime() {
-            return this.lastResponseTime;
-        }
-
-        public void updateLastResponseTime() {
-            this.lastResponseTime = System.currentTimeMillis();
-        }
-
-        public String getChannelAddress() {
-            return channelAddress;
         }
 
         public boolean reconnect(Channel channel) {
