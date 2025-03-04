@@ -18,4 +18,8 @@ public class NodeInfo {
         this.port = port;
     }
 
+    public String addr() {
+        return host + ":" + port;
+    }
+
 }

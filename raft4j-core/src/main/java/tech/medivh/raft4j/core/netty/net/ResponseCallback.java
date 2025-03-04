@@ -11,4 +11,9 @@ public interface ResponseCallback {
      * @param response
      **/
     void onResponse(RaftMessage response);
+
+    /**
+     * @param throwable
+     **/
+    void onException(Throwable throwable);
 }

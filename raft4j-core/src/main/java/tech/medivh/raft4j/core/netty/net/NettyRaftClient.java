@@ -10,7 +10,10 @@ import lombok.extern.slf4j.Slf4j;
 import tech.medivh.raft4j.core.NodeInfo;
 import tech.medivh.raft4j.core.RaftMessage;
 import tech.medivh.raft4j.core.netty.RaftClientConfig;
+import tech.medivh.raft4j.core.netty.exception.ConnectionException;
+import tech.medivh.raft4j.core.netty.exception.MessageException;
 import tech.medivh.raft4j.core.netty.exception.MessageTimeoutException;
+import tech.medivh.raft4j.core.netty.exception.SendMessageException;
 import tech.medivh.raft4j.core.netty.message.RaftMessageCodec;
 import tech.medivh.raft4j.core.netty.message.ResponseCode;
 import tech.medivh.raft4j.core.netty.processor.NettyMessageProcessor;
@@ -18,10 +21,14 @@ import tech.medivh.raft4j.core.netty.processor.NettyMessageProcessor;
 import java.net.SocketAddress;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -94,11 +101,6 @@ public class NettyRaftClient implements NettyMessageProcessor, RaftClient {
         processorTable.put(code, processor);
     }
 
-    @Override
-    public ResponseFuture sendRequestSync(NodeInfo node, RaftMessage request, long timeoutMillis) throws MessageTimeoutException, InterruptedException {
-        return null;
-    }
-
 
     /**
      * sync channel return channelFuture
@@ -156,29 +158,119 @@ public class NettyRaftClient implements NettyMessageProcessor, RaftClient {
         return null;
     }
 
-    @Override
-    public ResponseFuture sendRequestAsync(NodeInfo node, RaftMessage request, ResponseCallback callback) {
-        ChannelFuture channelFuture = createOrGetChannelAsync(node);
-        channelFuture.addListener(f -> {
-            if (f.isSuccess()) {
-                Channel channel = channelFuture.channel();
-                writeAndFlushRequest(channel, request);
+    private void closeChannel(NodeInfo nodeInfo, Channel channel) {
+        if (channel == null) {
+            return;
+        }
+        try {
+            if (!channelLock.tryLock(LOCK_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)) {
+                log.warn("closeChannel: try to lock channel table, but timeout, {}ms", LOCK_TIMEOUT_MILLIS);
                 return;
             }
+            final ChannelWrapper prevCW = this.channelTable.get(nodeInfo);
 
-        });
-        Channel channel = null;
-        RemoteResponseFuture responseFuture = new RemoteResponseFuture(request);
-        inFlightRequests.put(request.getCode(), responseFuture);
-//        responseFuture.waitResponse(timeoutMillis);
-        return responseFuture;
+            log.info("closeChannel: begin close the channel[node={}, id={}] Found: {}", nodeInfo, channel.id(),
+                    prevCW != null);
+
+            if (null != prevCW) {
+                this.channelTable.remove(nodeInfo);
+            }
+            channel.close().addListener(f -> {
+                log.info("closeChannel: close the channel[node={}, id={}] result: {}", nodeInfo, channel.id(),
+                        f.isSuccess());
+            });
+        } catch (Exception e) {
+            log.error("closeChannel: close channel exception", e);
+        } finally {
+            channelLock.unlock();
+        }
     }
 
-    private ChannelFuture writeAndFlushRequest(Channel channel, RaftMessage request) {
-//        if (channel != null && channel.isActive()) {
-//
-//        }
-        return null;
+    @Override
+    public void sendRequestAsync(NodeInfo node, RaftMessage request, long timeoutMillis, ResponseCallback callback)
+            throws MessageException, InterruptedException, ConnectionException {
+        long startTime = System.currentTimeMillis();
+        ChannelFuture channelFuture = createOrGetChannelAsync(node);
+        if (channelFuture == null) {
+            callback.onException(new SendMessageException(node));
+            return;
+        }
+        channelFuture.addListener(f -> {
+            if (!f.isSuccess()) {
+                callback.onException(new ConnectionException(node));
+                return;
+            }
+            Channel channel = channelFuture.channel();
+            if (channel != null && channel.isActive()) {
+                long remain = timeoutMillis - (System.currentTimeMillis() - startTime);
+                if (remain <= 0) {
+                    callback.onException(new MessageTimeoutException(node, timeoutMillis));
+                    return;
+                }
+                sendRequestSync(node, request, timeoutMillis);
+            }
+        });
+    }
+
+
+    @Override
+    public RaftMessage sendRequestSync(NodeInfo node, RaftMessage request, long timeoutMillis) throws MessageException, InterruptedException, ConnectionException {
+        try {
+            return sendRequestSync0(node, request, timeoutMillis).thenApply(ResponseFuture::getResponse).get(timeoutMillis, TimeUnit.MILLISECONDS);
+        } catch (ExecutionException e) {
+            throw new SendMessageException(node, e);
+        } catch (TimeoutException e) {
+            throw new MessageTimeoutException(node, timeoutMillis);
+        }
+
+    }
+
+
+    private CompletableFuture<ResponseFuture> sendRequestSync0(NodeInfo node, RaftMessage request, long timeoutMillis) {
+        CompletableFuture<ResponseFuture> completableFuture = new CompletableFuture<>();
+        long startTime = System.currentTimeMillis();
+        Channel channel = createOrGetChannelSync(node);
+        if (channel == null) {
+            completableFuture.completeExceptionally(new ConnectionException(node));
+            return completableFuture;
+        }
+        long remain = timeoutMillis - (System.currentTimeMillis() - startTime);
+        if (remain <= 0) {
+            completableFuture.completeExceptionally(new MessageTimeoutException(node, timeoutMillis));
+            return completableFuture;
+        }
+        //  support lambda
+        AtomicReference<ResponseFuture> responseFutureRef = new AtomicReference<>();
+        ResponseFuture responseFuture = new RemoteResponseFuture(request, node, remain, new ResponseCallback() {
+
+            @Override
+            public void onResponse(RaftMessage response) {
+                completableFuture.complete(responseFutureRef.get());
+            }
+
+            @Override
+            public void onException(Throwable throwable) {
+                completableFuture.completeExceptionally(throwable);
+            }
+        });
+        responseFutureRef.set(responseFuture);
+        this.inFlightRequests.put(request.getCode(), responseFuture);
+        try {
+            channel.writeAndFlush(request).addListener(f -> {
+                if (f.isSuccess()) {
+                    responseFuture.setSendRequestSuccess();
+                } else {
+                    requestFail(request.getRequestId());
+                    log.warn("send a request command to channel <{}>, channelId={}, failed.", node.addr(),
+                            channel.id());
+                }
+            });
+        } catch (Exception e) {
+            this.inFlightRequests.remove(request.getCode());
+            completableFuture.completeExceptionally(new SendMessageException(node, e));
+            log.error("send request error", e);
+        }
+        return completableFuture;
     }
 
 
@@ -225,7 +317,18 @@ public class NettyRaftClient implements NettyMessageProcessor, RaftClient {
                         request.getCode(), response.getCode(), response.getRequestId(), channel, future.cause());
             }
         });
+    }
 
+    private void requestFail(int requestId) {
+        ResponseFuture responseFuture = inFlightRequests.remove(requestId);
+        if (responseFuture != null) {
+            responseFuture.setResponse(null);
+            try {
+                responseFuture.executeCallback();
+            } catch (Throwable e) {
+                log.warn("execute callback in requestFail, and callback throw", e);
+            }
+        }
     }
 
     class NettyConnectManageHandler extends ChannelDuplexHandler {

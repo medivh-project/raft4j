@@ -27,7 +27,27 @@ public class LocalResponseFuture implements ResponseFuture {
     }
 
     @Override
+    public RaftMessage getResponse() {
+        return localResponse;
+    }
+
+    @Override
     public void setResponse(RaftMessage response) {
         throw new UnsupportedOperationException("local response future can not set response");
+    }
+
+    @Override
+    public void setSendRequestSuccess() {
+        
+    }
+
+    @Override
+    public boolean sendRequestSuccess() {
+        return false;
+    }
+
+    @Override
+    public void executeCallback() {
+        
     }
 }
