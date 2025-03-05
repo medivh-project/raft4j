@@ -7,6 +7,9 @@ import lombok.Data;
  **/
 @Data
 public class RaftClientConfig {
+
     private int processThreadNum = Runtime.getRuntime().availableProcessors();
-    
+
+    private int inflightLimitNum = 1000;
+
 }

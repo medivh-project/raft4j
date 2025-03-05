@@ -23,7 +23,7 @@ public class Cluster implements Iterable<NodeInfo> {
         return nodeInfos.get(index);
     }
 
-    public int nodeCount() {                                                                                         
+    public int nodeCount() {
         return nodeInfos.size();
     }
 

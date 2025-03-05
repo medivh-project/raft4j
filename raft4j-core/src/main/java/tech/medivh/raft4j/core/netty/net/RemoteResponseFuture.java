@@ -3,6 +3,9 @@ package tech.medivh.raft4j.core.netty.net;
 import lombok.extern.slf4j.Slf4j;
 import tech.medivh.raft4j.core.NodeInfo;
 import tech.medivh.raft4j.core.RaftMessage;
+import tech.medivh.raft4j.core.netty.OnceExecutor;
+import tech.medivh.raft4j.core.netty.exception.MessageException;
+import tech.medivh.raft4j.core.netty.exception.MessageTimeoutException;
 import tech.medivh.raft4j.core.netty.exception.SendMessageException;
 
 import java.util.concurrent.CountDownLatch;
@@ -35,11 +38,15 @@ public class RemoteResponseFuture implements ResponseFuture {
 
     private volatile Throwable cause;
 
-    public RemoteResponseFuture(RaftMessage request, NodeInfo nodeInfo, long timeoutMillis, ResponseCallback callback) {
+    private final OnceExecutor limitRelease;
+
+    public RemoteResponseFuture(RaftMessage request, NodeInfo nodeInfo, long timeoutMillis, ResponseCallback callback
+            , OnceExecutor limitRelease) {
         this.request = request;
         this.callback = callback;
         this.timeoutMillis = timeoutMillis;
         this.nodeInfo = nodeInfo;
+        this.limitRelease = limitRelease;
     }
 
 
@@ -67,6 +74,7 @@ public class RemoteResponseFuture implements ResponseFuture {
     public void setResponse(RaftMessage response) {
         this.response = response;
         countDownLatch.countDown();
+        limitRelease.execute();
     }
 
     @Override
@@ -84,13 +92,28 @@ public class RemoteResponseFuture implements ResponseFuture {
         if (this.callback == null || !exactlyOnce.compareAndSet(false, true)) {
             return;
         }
-        if (this.response == null) {
-            this.callback.onResponse(response);
-            return;
+        try {
+            if (this.response != null) {
+                this.callback.onResponse(response);
+                return;
+            }
+            if (!this.sendRequestSuccess) {
+                this.callback.onException(new SendMessageException(nodeInfo, getCause()));
+                return;
+            }
+            if (isTimeout()) {
+                this.callback.onException(new MessageTimeoutException(nodeInfo, timeoutMillis));
+                return;
+            }
+            this.callback.onException(new MessageException(getRequest().toString(), getCause()));    
+        }finally {
+            limitRelease.execute();
         }
-        if (!this.sendRequestSuccess) {
-            this.callback.onException(new SendMessageException(nodeInfo, get));
-        }
+        
+    }
+
+    public boolean isTimeout() {
+        return System.currentTimeMillis() - startTime > timeoutMillis;
     }
 
     @Override

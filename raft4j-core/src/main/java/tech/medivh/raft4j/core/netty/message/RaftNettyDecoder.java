@@ -7,7 +7,6 @@ import lombok.extern.slf4j.Slf4j;
 import tech.medivh.raft4j.core.RaftMessage;
 
 /**
- *
  * @author gongxuanzhangmelt@gmail.com
  **/
 @Slf4j

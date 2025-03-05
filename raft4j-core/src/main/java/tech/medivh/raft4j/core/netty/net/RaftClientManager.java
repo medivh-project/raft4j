@@ -7,6 +7,4 @@ package tech.medivh.raft4j.core.netty.net;
 public interface RaftClientManager {
 
     
-    
-
 }

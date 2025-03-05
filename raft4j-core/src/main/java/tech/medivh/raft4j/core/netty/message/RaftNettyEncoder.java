@@ -9,11 +9,10 @@ import tech.medivh.raft4j.core.RaftMessage;
  * @author gongxuanzhangmelt@gmail.com
  **/
 public class RaftNettyEncoder extends MessageToByteEncoder<RaftMessage> {
-    
-    
-    
+
+
     @Override
     public void encode(ChannelHandlerContext ctx, RaftMessage msg, ByteBuf out) throws Exception {
-        
+
     }
 }

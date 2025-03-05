@@ -8,7 +8,7 @@ import tech.medivh.raft4j.core.NodeInfo;
  **/
 public class SendMessageException extends MessageException {
 
-    
+
     public SendMessageException(NodeInfo nodeInfo) {
         this(nodeInfo, null);
     }

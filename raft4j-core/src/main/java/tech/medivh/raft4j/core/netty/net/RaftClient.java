@@ -6,6 +6,8 @@ import tech.medivh.raft4j.core.netty.exception.ConnectionException;
 import tech.medivh.raft4j.core.netty.exception.MessageException;
 import tech.medivh.raft4j.core.netty.processor.NettyMessageProcessor;
 
+import java.util.concurrent.CompletableFuture;
+
 /**
  * @author gongxuanzhangmelt@gmail.com
  **/
@@ -28,6 +30,17 @@ public interface RaftClient {
      * @param processor the processor instance
      **/
     void registerMessageProcessor(int code, NettyMessageProcessor processor);
+
+
+    /**
+     * send a request to the server and return a future
+     *
+     * @param node          the target node
+     * @param request       the request message
+     * @param timeoutMillis the timeout
+     * @return the response future
+     **/
+    CompletableFuture<ResponseFuture> sendRequest(NodeInfo node, RaftMessage request, long timeoutMillis);
 
     /**
      * send request to the server and wait for the response.

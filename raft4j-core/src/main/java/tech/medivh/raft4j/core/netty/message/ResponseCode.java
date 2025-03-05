@@ -12,6 +12,6 @@ public interface ResponseCode {
     int NOT_SUPPORT = 2 | RESPONSE_FLAG;
 
     int SYSTEM_ERROR = 3 | RESPONSE_FLAG;
-    
+
 
 }

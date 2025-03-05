@@ -125,5 +125,12 @@ public class RaftMessage {
         return version;
     }
 
-
+    @Override
+    public String toString() {
+        return "RaftMessage{" +
+                "code=" + code +
+                ", version=" + version +
+                ", requestId=" + requestId +
+                '}';
+    }
 }
